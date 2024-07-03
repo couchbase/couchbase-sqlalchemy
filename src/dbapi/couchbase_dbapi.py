@@ -71,14 +71,13 @@ class CouchbaseCursor:
         # Assuming you've already created type_map as shown previously
         metadata = qresult.metadata().signature()
         self._description.clear()
-        print("rows ",self._rows," rows"," ",metadata)
         if metadata.get('*') == '*':
             return
         try:
             for i in range(len(metadata['name'])):
                 col_name = metadata['name'][i]
                 col_type = metadata['type'][i]
-                self._description.append((col_name,self.type_mapping(col_type), None, None, None, None, None))
+                self._description.append((col_name,col_type, None, None, None, None, None))
         except Exception as e:
             logger.error(f"Failed to connect to columnar cluster: {e}")
             raise

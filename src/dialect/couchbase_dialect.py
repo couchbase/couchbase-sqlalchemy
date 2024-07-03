@@ -11,33 +11,23 @@ from sqlalchemy.types import (
     TIME,
     VARCHAR,
 )
-
-class CouchbaseSQLCompiler(SQLCompiler):
-    def visit_column(self, column, add_to_result_map=None, include_table=True, **kwargs):
-        if include_table and column.table is not None:
-            return f"{column.table.name}.{column.name}"
-        else:
-            return f"{column.name}"
-    def visit_table(self, table, asfrom=False, alias=None, **kwargs):
-        # Customize the output of table names
-        # `asfrom` indicates whether the table is being compiled in a FROM clause
-        # `alias` is used if the table has an alias in the query
-        print("table : ",table)
-        if alias is not None:
-            return f"{table.name} AS {alias}"
-        else:
-            return f"{table.name}"
+from sqlalchemy.engine.default import DefaultDialect
+from sqlalchemy.engine.url import make_url
+import re
+from urllib.parse import urlparse, parse_qs, urlencode
+from sqlalchemy.sql.compiler import SQLCompiler
+from sqlalchemy import select
+from urllib.parse import unquote
 
 class CouchbaseIdentifierPreparer(IdentifierPreparer):
     def __init__(self, dialect, **kw):
         quote = '`'
         super().__init__(dialect, initial_quote=quote, escape_quote=quote)
-    
+
 class CouchbaseDialect(DefaultDialect):
-    name = "columnar"
-    driver = "couchbase"
+    name = "couchbasedb"
+    driver = "couchbasedb"
     preparer = CouchbaseIdentifierPreparer
-    statement_compiler = CouchbaseSQLCompiler
     supports_alter = False
     max_identifier_length = 255
     default_paramstyle = 'pyformat'
@@ -46,30 +36,34 @@ class CouchbaseDialect(DefaultDialect):
     supports_native_boolean = True
     supports_statement_cache = True
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     @classmethod
     def dbapi(cls):
-        from columnar.dbapi import couchbase_dbapi
+        from src.dbapi import couchbase_dbapi
         return couchbase_dbapi
+
     def create_connect_args(self, url):
-        print("reaching here create_connect_args")
-        opts = url.translate_connect_args()
-        opts.update(url.query)
-        username = opts.get('username', '')
-        password = opts.get('password','')
-        server = opts.get('host','127.0.0.1')
-        ssl_cert_path = opts.get('ssl','')
-        connection_string = ""
-        print("this is",ssl_cert_path,"empty")
-        if ssl_cert_path != "": 
-            port = opts.get('port',11998)
-            connection_string = f"couchbases://{server}:{port}?truststorepath={ssl_cert_path}"
-        else :
-            port = opts.get('port',12000)
-            connection_string = f"couchbase://{server}:{port}"
-        
+        # Parse the URL
+        parsed_url = urlparse(str(url))
+        username = unquote(parsed_url.username)
+        password = unquote(parsed_url.password)
+        host = unquote(parsed_url.hostname)
+        port = parsed_url.port  # Default port if not specified
+        # Handle the query parameters
+        query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+        # Determine the protocol based on the SSL parameter
+        ssl_enabled = query_params.get('ssl', ['true'])[0].lower()
+        protocol = 'couchbases' if ssl_enabled=='true' else 'couchbase'
+        # Remove the SSL parameter from the query parameters 
+        query_params.pop('ssl', None)
+        # Construct the query string without the SSL parameter
+        query_string = urlencode(query_params, doseq=True)
+        # Construct the new connection string
+        connection_string = f"{protocol}://{host}"
+        if port:
+            connection_string += f":{port}"
+        if query_string:
+            connection_string += f"?{query_string}"
+
         return ([connection_string, username, password], {})
 
     
@@ -83,7 +77,6 @@ class CouchbaseDialect(DefaultDialect):
     def _get_table_columns(self, connection, table_name, schema=None):
         return self.get_columns(self, connection, table_name, schema)
         
-    
     def _has_object(self, connection, object_type, object_name, schema=None):
         try:
             results = connection.execute(
@@ -116,9 +109,7 @@ class CouchbaseDialect(DefaultDialect):
         # we define views inplace of tables.
         return []
         
-    
     def get_view_names(self, connection, schema=None, **kw):
-        print("schema is : ",schema)
         query = """
                 SELECT d.DatasetName 
                 FROM Metadata.`Dataset` d 
@@ -135,7 +126,6 @@ class CouchbaseDialect(DefaultDialect):
     
     def get_indexes(self, connection, table_name, schema=None, **kw):
         return []
-
 
     def get_pk_constraint(self, connection, table_name, schema=None, **kw):
         query = f"""
@@ -154,7 +144,6 @@ class CouchbaseDialect(DefaultDialect):
         return pk_info
     
     def get_columns(self, connection, table_name, schema=None, **kw):
-        print("this is table name  : ",table_name)
         query = f"""
                 SELECT d.Derived.Record.Fields 
                 FROM Metadata.`Datatype` d 

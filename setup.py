@@ -13,7 +13,7 @@ setup(
     ],
     entry_points={
         'sqlalchemy.dialects': [
-            'couchbase.columnar = src.dialect.couchbase_dialect:CouchbaseDialect',
+            'couchbasedb = src.dialect.couchbase_dialect:CouchbaseDialect',
         ],
     },
 )
