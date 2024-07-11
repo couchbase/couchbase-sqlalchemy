@@ -68,7 +68,7 @@ class CouchbaseCursor:
         qresult = self.cluster.analytics_query(query, AnalyticsOptions(raw={"format": "lossless-adm","signature": True, "client-type": "jdbc", "sql-compat": True}))
         
         self._rows = [row for row in qresult]
-        # Assuming you've already created type_map as shown previously
+        print(r for r in self._rows)
         metadata = qresult.metadata().signature()
         self._description.clear()
         if metadata.get('*') == '*':
