@@ -1,7 +1,6 @@
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.types import (
     BIGINT,
     BOOLEAN,
@@ -12,11 +11,7 @@ from sqlalchemy.types import (
     VARCHAR,
 )
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.engine.url import make_url
-import re
 from urllib.parse import urlparse, parse_qs, urlencode
-from sqlalchemy.sql.compiler import SQLCompiler
-from sqlalchemy import select
 from urllib.parse import unquote
 
 class CouchbaseIdentifierPreparer(IdentifierPreparer):
@@ -24,12 +19,10 @@ class CouchbaseIdentifierPreparer(IdentifierPreparer):
         quote = '`'
         super().__init__(dialect, initial_quote=quote, escape_quote=quote)
 
-
     def _quote_free_identifiers(self, *ids):
         """
         Unilaterally identifier-quote any number of strings.
         """
-        print("schema in quote_free_schema is ")
         return tuple(self.quote(i) for i in ids if i is not None)
 
     def quote_schema(self, schema, force=None):
@@ -62,12 +55,11 @@ class CouchbaseIdentifierPreparer(IdentifierPreparer):
                 pre_idx += 1
         if pre_idx < idx:
             ret.append(schema[pre_idx:idx])
-        print("returns : ",ret)
         return ret
 
 class CouchbaseDialect(DefaultDialect):
-    name = "couchbasedb"
-    driver = "couchbasedb"
+    name = "couchbase"
+    driver = "couchbase"
     preparer = CouchbaseIdentifierPreparer
     supports_alter = False
     max_identifier_length = 255
@@ -79,43 +71,36 @@ class CouchbaseDialect(DefaultDialect):
     schema_flag_map = {}
     @classmethod
     def dbapi(cls):
-        from src.dbapi import couchbase_dbapi
+        from couchbase_sqlalchemy.dbapi import couchbase_dbapi
         return couchbase_dbapi
 
     def create_connect_args(self, url):
-        # Parse the URL
         parsed_url = urlparse(str(url))
         username = unquote(parsed_url.username)
         password = unquote(parsed_url.password)
         host = unquote(parsed_url.hostname)
         port = parsed_url.port
         query_params = parse_qs(parsed_url.query, keep_blank_values=True)
-        # Determine the protocol based on the SSL parameter
         ssl_enabled = query_params.get('ssl', ['true'])[0].lower()
         protocol = 'couchbases' if ssl_enabled=='true' else 'couchbase'
-        # Remove the SSL parameter from the query parameters 
         query_params.pop('ssl', None)
         query_string = urlencode(query_params, doseq=True)
-        # Construct the new connection string
         connection_string = f"{protocol}://{host}"
         if port:
             connection_string += f":{port}"
         if query_string:
             connection_string += f"?{query_string}"
-        print("connection strin is ",connection_string)
         return ([connection_string, username, password], {})
-
-    
 
     def has_table(self, connection, table_name, schema=None):
         """
         Checks if the table exists
         """
         return self._has_object(connection,"TABLE",table_name,schema)
-    
+
     def _get_table_columns(self, connection, table_name, schema=None):
         return self.get_columns(self, connection, table_name, schema)
-        
+
     def _has_object(self, connection, object_type, object_name, schema=None):
         try:
             results = connection.execute(
@@ -130,7 +115,7 @@ class CouchbaseDialect(DefaultDialect):
             return have
         except Exception as e:
             raise
-    
+
     def check_two_part_name(self, schema):
         parts = schema.split('/')
         if len(parts) == 2:
@@ -138,7 +123,7 @@ class CouchbaseDialect(DefaultDialect):
             return database_name + '.' + scope_name
         else:
             return schema
-    
+
     def get_schema_names(self, connection, **kw):
         query = """
             SELECT d.DatabaseName, d.DataverseName
@@ -158,12 +143,10 @@ class CouchbaseDialect(DefaultDialect):
                 schemas.append(schema_name)
                 self.schema_flag_map[schema_name] = True
         return schemas
-    
 
     def get_table_names(self, connection, schema=None, **kw):
-        # we define views inplace of tables.
         return []
-        
+
     def get_view_names(self, connection, schema=None, **kw):
         if schema not in self.schema_flag_map:
             print(f"Schema '{schema}' not found in schema map.")
@@ -186,15 +169,12 @@ class CouchbaseDialect(DefaultDialect):
             condition = f"AND ds.DataverseName = '{dataverse_name}'"
         else:
             condition = f"AND ds.DataverseName = '{schema}'"
-    
         query = query_base + condition + ";"
         view_names = connection.execute(query)
         result = view_names.fetchall()
         views = [row['DatasetName'] for row in result]
         return views
 
-    
-    
     def get_indexes(self, connection, table_name, schema=None, **kw):
         return []
 
@@ -213,20 +193,16 @@ class CouchbaseDialect(DefaultDialect):
         }
         pk_info['constrained_columns'] = Primary_Keys
         return pk_info
-    
+
     def get_columns(self, connection, table_name, schema=None, **kw):
         query = f"""
                 SELECT d.Derived.Record.Fields 
                 FROM Metadata.`Datatype` d 
                 WHERE d.DatatypeName = '$d$t$i${table_name}';
                 """
-        
         result = connection.execute(query)
         columns_data = result.fetchall()
-    # Assuming 'columns_data' returns a list of dictionaries under the key 'Fields'
         fields = columns_data[0]['Fields']
-    
-    # Map to translate JSON types to SQLAlchemy types
         type_map = {
         "string": VARCHAR,
         "int64": BIGINT,
@@ -236,8 +212,6 @@ class CouchbaseDialect(DefaultDialect):
         "date":DATE,
         "time":TIME
         }
-
-    # Constructing the list of dictionaries as per SQLAlchemy requirements
         columns = []
         for field in fields:
             column_info = {
@@ -248,10 +222,7 @@ class CouchbaseDialect(DefaultDialect):
             'autoincrement': field.get('IsAutoincrement', False)
             }
             columns.append(column_info)
-        
         return columns
-
 
     def get_foreign_keys(self, connection, table_name, schema=None, **kw):
         return []
-    
