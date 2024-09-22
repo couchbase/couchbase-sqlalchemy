@@ -34,14 +34,14 @@ class IntegrityError(DatabaseError):
 class CouchbaseConnection:
     def __init__(self, connection_string, username, password):
         self.cluster = None
-        logger.info('Initializing cluster connection',connection_string)  # Generic message without sensitive data
+        logger.info('Initializing cluster connection %s',connection_string)  # Generic message without sensitive data
         try:
             timeout_options = ClusterTimeoutOptions(connect_timeout=60)
             self.cluster = Cluster(connection_string, ClusterOptions(PasswordAuthenticator(username, password)), timeout_options=timeout_options)
             logger.info('Cluster ready')
         except Exception as e:
             logger.error(f"Failed to connect to columnar cluster: {e}")
-            raise
+            raise Exception(e)
 
     def cursor(self):
         return CouchbaseCursor(self.cluster)
@@ -95,10 +95,19 @@ class CouchbaseCursor:
         return self._description
 
     def fetchone(self):
+        column_info = [(desc[0], desc[1]) for desc in self._description]
         if self._rows:
             row = self._rows.pop(0)
-            return tuple(row.values())
-        return None
+            row_ordered_values = []
+            for col_name, col_type in column_info:
+                value = row.get(col_name)
+                if value is not None:
+                    row_ordered_values.append(self.type_conversion(value,col_type))
+                else :
+                    row_ordered_values.append(None)
+            return row_ordered_values
+        else:
+            return None
 
     def type_mapping(self,col_type):
         type_mappings = {
@@ -187,12 +196,12 @@ class CouchbaseCursor:
             row_ordered_values = []
             for col_name, col_type in column_info:
                 value = row.get(col_name)
-                if value != None:
+                if value is not None:
                     row_ordered_values.append(self.type_conversion(value,col_type))
                 else :
                     row_ordered_values.append(None)
             all_row_values.append(row_ordered_values)
-        self._rows = [] 
+        self._rows = []
         return all_row_values
 
     def close(self):

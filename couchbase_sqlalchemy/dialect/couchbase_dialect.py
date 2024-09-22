@@ -114,7 +114,7 @@ class CouchbaseDialect(DefaultDialect):
             have = row is not None
             return have
         except Exception as e:
-            raise
+            raise Exception(e)
 
     def check_two_part_name(self, schema):
         parts = schema.split('/')
