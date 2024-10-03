@@ -187,7 +187,9 @@ class CouchbaseCursor:
             return self.convert_encoded_float(value)
         elif value_type == String:
             return value[1:]
-        return value[1:]
+        elif isinstance(value, str):
+            return value[1:]
+        return value
 
     def fetchall(self):
         all_row_values = []
