@@ -4,11 +4,14 @@ from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 from sqlalchemy import BigInteger
 from couchbase.options import AnalyticsOptions,ClusterTimeoutOptions
-from sqlalchemy import BigInteger, String, Float, Boolean, DateTime, Date, Time
+from sqlalchemy import BigInteger, String, Float, Boolean, DateTime, Date, Time, Integer
 from datetime import datetime, timedelta
 import struct
 from couchbase.exceptions import CouchbaseException,AnalyticsErrorContext
 import traceback
+import threading
+import time
+import hashlib
 
 logging.basicConfig(filename='couchbase-sqlalchemy.log',
                     filemode='w',
@@ -31,17 +34,14 @@ class OperationalError(DatabaseError):
 class IntegrityError(DatabaseError):
     pass
 
+_cache_lock = threading.Lock()
+CONNECTION_TIMEOUT = 3600
+_cluster_pool = {}
+
 class CouchbaseConnection:
-    def __init__(self, connection_string, username, password):
-        self.cluster = None
-        logger.info('Initializing cluster connection %s',connection_string)  # Generic message without sensitive data
-        try:
-            timeout_options = ClusterTimeoutOptions(connect_timeout=60)
-            self.cluster = Cluster(connection_string, ClusterOptions(PasswordAuthenticator(username, password)), timeout_options=timeout_options)
-            logger.info('Cluster ready')
-        except Exception as e:
-            logger.error(f"Failed to connect to columnar cluster: {e}")
-            raise Exception(e)
+    def __init__(self, cluster, key):
+        self.cluster = cluster
+        self._key = key
 
     def cursor(self):
         return CouchbaseCursor(self.cluster)
@@ -53,13 +53,11 @@ class CouchbaseConnection:
         pass
 
     def close(self):
-        if self.cluster is not None:
-            logger.info("Closing cluster connection...")
-            self.cluster.close()
-            self.cluster = None
-            logger.info("Cluster connection closed.")
-        else:
-            logger.warning("Attempted to close an already closed connection.")
+        logger.info("Connection close request.")
+        with _cache_lock:
+            cluster, last_used, active_user_count = _cluster_pool[self._key]
+            active_user_count = active_user_count - 1
+            _cluster_pool[self._key] = (cluster, last_used, active_user_count)
 
 class CouchbaseCursor:
     def __init__(self, cluster):
@@ -113,6 +111,12 @@ class CouchbaseCursor:
         type_mappings = {
         "int64": BigInteger,
         "int64?": BigInteger,
+        "int32": Integer,
+        "int32?": Integer,
+        "int16": Integer,
+        "int16?": Integer,
+        "int8": Integer,
+        "int8?": Integer,
         "double": Float,
         "double?": Float,
         "string": String,
@@ -187,6 +191,8 @@ class CouchbaseCursor:
             return self.convert_encoded_float(value)
         elif value_type == String:
             return value[1:]
+        elif value_type == Integer:
+            return value[3:]
         return value
 
     def fetchall(self):
@@ -208,5 +214,49 @@ class CouchbaseCursor:
         self._rows = []
         logger.info("Cursor closed.")
 
+def _generate_cache_key(connection_string, username, password):
+    """Generate a unique, secure hash for the cache key."""
+    key_str = f"{connection_string}|{username}|{password}"
+    return hashlib.sha256(key_str.encode()).hexdigest()
+
+def _close_expired_connections():
+    """Remove and close expired connections based on timeout."""
+    current_time = time.time()
+    expired_keys = [key for key, (cluster, last_used, active_user_count) in _cluster_pool.items()
+                    if current_time - last_used > CONNECTION_TIMEOUT and active_user_count==0]
+
+    for key in expired_keys:
+        cluster, last_used, active_user_count = _cluster_pool.pop(key)
+        logger.info(f"Closing expired cluster ")
+        if cluster.connected:
+            cluster.close()
+
 def connect(connection_string, username, password):
-    return CouchbaseConnection(connection_string, username, password)
+    """Get a connection from the pool or create a new one if needed."""
+    key = _generate_cache_key(connection_string, username, password)
+
+    with _cache_lock:
+        _close_expired_connections()
+
+        if key in _cluster_pool:
+            # Move key to end (most recently used)
+            cluster, _, active_user_count= _cluster_pool.pop(key)
+            if cluster.connected:
+                logger.info("Reusing existing Cluster.")
+                _cluster_pool[key] = (cluster, time.time(), active_user_count+1)
+                return CouchbaseConnection(cluster, key)
+
+        logger.info("Creating new Cluster connection.")
+        cluster = create_cluster(connection_string, username, password)
+        _cluster_pool[key] = (cluster, time.time(), 1)
+        return CouchbaseConnection(cluster, key)
+
+def create_cluster(connection_string, username, password):
+    timeout_opts = ClusterTimeoutOptions(connect_timeout=60)
+    auth = PasswordAuthenticator(username, password)
+    cluster = Cluster(
+                connection_string,
+                ClusterOptions(auth),
+                timeout_options=timeout_opts
+            )
+    return cluster

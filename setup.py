@@ -12,7 +12,7 @@ with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name='couchbase-sqlalchemy',
-    version='0.1.13',
+    version='1.0.1',
     author='Ayush Tripathi',
     author_email='ayush.tripathi@couchbase.com',
     license = "Apache-2.0",
