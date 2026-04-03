@@ -1,7 +1,7 @@
 Couchbase SQLAlchemy
 =====================
 
-Couchbase dialect for SQLAlchemy to `Couchbase Analytics/Columnar <https://docs.couchbase.com/server/current/learn/services-and-indexes/services/analytics-service.html/>`_.
+Couchbase dialect for SQLAlchemy to `Couchbase Analytics <https://docs.couchbase.com/server/current/learn/services-and-indexes/services/analytics-service.html/>`_.
 A Python client library for Couchbase Analytics, `couchbase-sqlalchemy` provides a comprehensive DB-API and SQLAlchemy dialect implementation for Couchbase.
 
 .. image:: https://img.shields.io/pypi/v/couchbase-sqlalchemy.svg
@@ -30,7 +30,7 @@ Run a Simple query
         import urllib.parse
         from sqlalchemy import create_engine
         # Define the Couchbase connection string (replace with your details)
-        URL = 'couchbase://<username>:<password>@<host>:<port>?ssl=false'
+        COUCHBASE_URL = 'couchbase://<username>:<password>@<host>:<port>?ssl=false'
         # Create the engine for Couchbase using the Couchbase SQLAlchemy dialect
         engine = create_engine(COUCHBASE_URL)
         query_result = engine.execute("select locate('something','there is something good');")

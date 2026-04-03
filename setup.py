@@ -12,17 +12,17 @@ with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name='couchbase-sqlalchemy',
-    version='1.0.1',
+    version='1.0.3',
     author='Ayush Tripathi',
     author_email='ayush.tripathi@couchbase.com',
     license = "Apache-2.0",
     long_description=long_description,
-    description='A SQLAlchemy dialect for Couchbase Analytics/Columnar.',
-    keywords='Couchbase db database cloud analytics Columnar',
+    description='A SQLAlchemy dialect for Couchbase Analytics.',
+    keywords='Couchbase db database cloud analytics',
     packages=find_packages(),
     install_requires=[
         'sqlalchemy>=1.3.0,<2.0',
-        'couchbase>=4.0.0'
+        'couchbase>=4.5.0,<4.6.0'
     ],
     entry_points={
         'sqlalchemy.dialects': [

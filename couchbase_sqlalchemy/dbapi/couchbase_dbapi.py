@@ -256,7 +256,7 @@ def create_cluster(connection_string, username, password):
     auth = PasswordAuthenticator(username, password)
     cluster = Cluster(
                 connection_string,
-                ClusterOptions(auth),
+                ClusterOptions(auth, allow_enterprise_analytics=True),
                 timeout_options=timeout_opts
             )
     return cluster
